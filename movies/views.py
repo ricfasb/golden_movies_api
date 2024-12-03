@@ -87,10 +87,16 @@ class MoviesView(APIView, PageNumberPagination):
                 last_year=Max("year"),
                 interval=F("last_year") - F("first_year")
             )
+            .filter(interval__gt=0)
         )
 
-        max_interval = winners.aggregate(max_interval=Max('interval'))['max_interval']
-        min_interval = winners.aggregate(min_interval=Min('interval'))['min_interval']
+        intervals = winners.aggregate(
+            min_interval=Min('interval'),
+            max_interval=Max('interval')
+        )
+
+        min_interval = intervals['min_interval']
+        max_interval = intervals['max_interval']
 
         producer_max_intervals = winners.filter(interval=max_interval) if max_interval > 0 else None
         producer_min_intervals = winners.filter(interval=min_interval) if min_interval > 0 else None
