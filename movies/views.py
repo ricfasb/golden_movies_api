@@ -9,6 +9,14 @@ from movies.serializers import MovieSerializer
 
 
 class MoviesView(APIView, PageNumberPagination):
+    """
+    API View para possibilitar a leitura da lista de indicados e vencedores
+    da categoria Pior Filme do Golden Raspberry Awards
+
+    Attributes:
+        pageSize (str): parametro com a quantidade de items por pagina.
+        page (str): parametro indicando o numero da pagina.
+    """
     page_size_query_param = 'pageSize'
     page_query_param = 'page'
 
@@ -83,10 +91,12 @@ class MoviesView(APIView, PageNumberPagination):
     def producer_intervals(self, request):
         winners = (Movie.objects.filter(winner=True).values('producers__name')
             .annotate(
+                count_wins=Count('id'),
                 first_year=Min("year"),
                 last_year=Max("year"),
                 interval=F("last_year") - F("first_year")
             )
+            .filter(count_wins__gt=1)
             .filter(interval__gt=0)
         )
 
