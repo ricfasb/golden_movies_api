@@ -24,10 +24,6 @@
     ```bash
     python manage.py migrate
     ```
-6. Aplique as migrations:
-    ```bash
-    python manage.py migrate
-    ```
 7. Rode os testes:
     ```bash
     python manage.py test
