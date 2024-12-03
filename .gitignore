@@ -1,0 +1,7 @@
+*.pyc
+*.bak
+db.sqlite3
+.idea/
+.vs/
+.coverage
+venv/
