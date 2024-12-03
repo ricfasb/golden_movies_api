@@ -61,7 +61,8 @@ class MoviesView(APIView, PageNumberPagination):
     def years_with_multiple_winners(self, request):
         years = (Movie.objects.filter(winner=True)
                  .values('year')
-                 .annotate(winner_count=Count('id'))
+                 .annotate(winner_count=Count('year'))
+                 .filter(winner_count__gt=1)
                  .order_by('year'))
 
         data = [
