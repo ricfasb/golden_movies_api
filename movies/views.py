@@ -78,7 +78,7 @@ class MoviesView(APIView, PageNumberPagination):
         studios = (Studio.objects.annotate(
             winCount=Count('movie', filter=Q(movie__winner=True)))
                    .filter(winCount__gt=0)
-                   .order_by('-winCount'))
+                   .order_by('-winCount')[:3])
 
         data = [
             {
