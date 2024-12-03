@@ -59,6 +59,9 @@ class MoviesView(APIView, PageNumberPagination):
         return paginator.get_paginated_response(serializer.data)
 
     def years_with_multiple_winners(self, request):
+        """
+            Query com anos que tiveram mais de um vencedor
+        """
         years = (Movie.objects.filter(winner=True)
                  .values('year')
                  .annotate(winner_count=Count('year'))
@@ -75,6 +78,9 @@ class MoviesView(APIView, PageNumberPagination):
         return Response(data)
 
     def studios_with_win_count(self, request):
+        """
+            Query contendo os três estúdios com mais vitórias
+        """
         studios = (Studio.objects.annotate(
             winCount=Count('movie', filter=Q(movie__winner=True)))
                    .filter(winCount__gt=0)
@@ -90,6 +96,9 @@ class MoviesView(APIView, PageNumberPagination):
         return Response(data)
 
     def producer_intervals(self, request):
+        """
+            Query com produtores com maior e menor intervalo entre vitórias
+        """
         winners = (Movie.objects.filter(winner=True).values('producers__name')
             .annotate(
                 count_wins=Count('id'),
