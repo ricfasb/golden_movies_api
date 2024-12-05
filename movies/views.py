@@ -1,4 +1,7 @@
-from django.db.models import Count, Q, Min, Max, F
+from collections import defaultdict
+
+from django.db.models import Count, Q
+from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,10 +17,10 @@ class MoviesView(APIView, PageNumberPagination):
     da categoria Pior Filme do Golden Raspberry Awards
 
     Attributes:
-        pageSize (str): parametro com a quantidade de items por pagina.
+        size (str): parametro com a quantidade de items por pagina.
         page (str): parametro indicando o numero da pagina.
     """
-    page_size_query_param = 'pageSize'
+    page_size_query_param = 'size'
     page_query_param = 'page'
 
     def get(self, request):
@@ -49,6 +52,16 @@ class MoviesView(APIView, PageNumberPagination):
 
         queryset = queryset.order_by(sort_param)
 
+        page = request.query_params.get('page', None)
+        size = request.query_params.get('size', None)
+
+        if page is None and size is None:
+            if year_filter is None or winner_filter is None:
+                return Response(status=status.HTTP_400_BAD_REQUEST)
+
+            serializer = MovieSerializer(queryset, many=True)
+            return Response(serializer.data)
+
         paginator = CustomPagination()
         results = paginator.paginate_queryset(queryset, request, view=self)
         serializer = MovieSerializer(results, many=True)
@@ -75,7 +88,7 @@ class MoviesView(APIView, PageNumberPagination):
             }
             for entry in years
         ]
-        return Response(data)
+        return Response({'years': data})
 
     def studios_with_win_count(self, request):
         """
@@ -93,56 +106,99 @@ class MoviesView(APIView, PageNumberPagination):
             }
             for studio in studios
         ]
-        return Response(data)
+        return Response({'studios': data})
 
     def producer_intervals(self, request):
         """
             Query com produtores com maior e menor intervalo entre vitórias
         """
-        winners = (Movie.objects.filter(winner=True).values('producers__name')
-            .annotate(
-                count_wins=Count('id'),
-                first_year=Min("year"),
-                last_year=Max("year"),
-                interval=F("last_year") - F("first_year")
-            )
-            .filter(count_wins__gt=1)
-            .filter(interval__gt=0)
-        )
+        winners = (Movie.objects.filter(winner=True)
+                   .prefetch_related('producers')
+                   .order_by('year'))
 
-        intervals = winners.aggregate(
-            min_interval=Min('interval'),
-            max_interval=Max('interval')
-        )
+        producer_years = defaultdict(list)
 
-        min_interval = intervals['min_interval']
-        max_interval = intervals['max_interval']
+        # Adicionamos todos os produtores no dicionario
+        for winner in winners:
+            for producer in winner.producers.all():
+                # quebramos os produtores em conjuncao
+                if 'and' in str(producer):
+                    producers = str(producer).split('and')
+                    for producer_joined in producers:
+                        producer_years[producer_joined.strip()].append(winner.year)
+                    continue
+                producer_years[str(producer)].append(winner.year)
 
-        producer_max_intervals = winners.filter(interval=max_interval) if max_interval > 0 else None
-        producer_min_intervals = winners.filter(interval=min_interval) if min_interval > 0 else None
+        # Filtramos os que tenham vencido mais de uma vez
+        filtered_producer_years = {producer: years for producer, years in producer_years.items() if len(years) > 1}
 
-        min_producers = []
-        max_producers = []
-
-        if producer_max_intervals:
-            for producer_max_interval in producer_max_intervals:
-                max_producers.append({
-                    'producer': producer_max_interval['producers__name'],
-                    'interval': producer_max_interval['interval'],
-                    'previousYear': producer_max_interval['first_year'],
-                    'followingYear': producer_max_interval['last_year']
-                })
-
-        if producer_min_intervals:
-            for producer_min_interval in producer_min_intervals:
-                min_producers.append({
-                    'producer': producer_min_interval['producers__name'],
-                    'interval': producer_min_interval['interval'],
-                    'previousYear': producer_min_interval['first_year'],
-                    'followingYear': producer_min_interval['last_year']
-                })
+        producer_max_interval = self.get_producers_max_interval(filtered_producer_years)
+        max_interval = 1 if len(producer_max_interval) == 0 else producer_max_interval[0]['interval']
+        producer_min_interval = self.get_producers_min_interval(max_interval, filtered_producer_years)
 
         return Response({
-            'min': min_producers,
-            'max': max_producers
+            'min': producer_min_interval,
+            'max': producer_max_interval
         })
+
+    def get_producers_max_interval(self, filtered_producer_years):
+        producer_max_interval = []
+        max_interval = 0
+
+        # Percorre os anos por produtor
+        for producer, years in filtered_producer_years.items():
+            # rimeiramente ordenamos
+            ordered_years = sorted(years)
+
+            for i in range(1, len(ordered_years)):
+                interval = ordered_years[i] - ordered_years[i - 1]
+
+                if interval > max_interval:
+                    producer_max_interval.clear()
+                    max_interval = interval
+                    producer_max_interval.append({
+                        'producer': str(producer),
+                        'interval': interval,
+                        'previousWin': ordered_years[i - 1],
+                        'followingWin': ordered_years[i]
+                    })
+                elif interval == max_interval:
+                    producer_max_interval.append({
+                        'producer': str(producer),
+                        'interval': interval,
+                        'previousWin': ordered_years[i - 1],
+                        'followingWin': ordered_years[i]
+                    })
+
+        return producer_max_interval
+
+    def get_producers_min_interval(self, max_interval, filtered_producer_years):
+        producer_min_interval = []
+        min_interval = max_interval
+
+        # Percorre os anos por produtor
+        for producer, years in filtered_producer_years.items():
+            # rimeiramente ordenamos
+            ordered_years = sorted(years)
+
+            for i in range(1, len(ordered_years)):
+                interval = ordered_years[i] - ordered_years[i - 1]
+
+                if interval < min_interval:
+                    min_interval = interval
+                    producer_min_interval.clear()
+                    producer_min_interval.append({
+                        'producer': str(producer),
+                        'interval': interval,
+                        'previousWin': ordered_years[i - 1],
+                        'followingWin': ordered_years[i]
+                    })
+                elif interval == min_interval:
+                    producer_min_interval.append({
+                        'producer': str(producer),
+                        'interval': interval,
+                        'previousWin': ordered_years[i - 1],
+                        'followingWin': ordered_years[i]
+                    })
+
+        return producer_min_interval

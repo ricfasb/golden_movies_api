@@ -3,7 +3,11 @@ from rest_framework.response import Response
 
 
 class CustomPagination(PageNumberPagination):
-    page_size_query_param = 'pageSize'
+    page_size_query_param = 'size'
+
+    def get_page_number(self, request, paginator):
+        page_number = super().get_page_number(request, paginator)
+        return '1' if page_number == '0' else page_number
 
     def get_paginated_response(self, data):
         sorted_param = self.request.query_params.get('sort', None)
